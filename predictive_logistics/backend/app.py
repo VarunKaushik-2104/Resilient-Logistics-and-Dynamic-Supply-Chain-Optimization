@@ -16,6 +16,14 @@ import math
 import re # Add this import at the very top of your app.py if it isn't there
 import json # Ensure json is imported at the top of app.py
 from functools import lru_cache
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Hello from Vercel!"
+
+# Remove app.run() as Vercel handles the execution
 import os
 from dotenv import load_dotenv
 
