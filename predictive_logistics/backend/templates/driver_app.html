@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Driver Console | Pred-Logistics</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root { --bg: #050c07; --s1: #091410; --green: #3ddc6e; --text: #c8d8cc; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; padding: 20px; text-align: center; }
+  .card { background: var(--s1); border: 1px solid #1e3328; border-radius: 16px; padding: 30px; margin-top: 40px; }
+  .status-dot { width: 12px; height: 12px; background: #555; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .status-active { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  .btn-start { background: var(--green); color: #050c07; border: none; padding: 20px; width: 100%; border-radius: 12px; font-weight: 800; font-size: 18px; cursor: pointer; margin-top: 20px; }
+  .info { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #4d7a5e; margin-top: 20px; line-height: 2; }
+</style>
+</head>
+<body>
+  <div style="font-family: 'JetBrains Mono'; font-size: 14px; color: var(--green);">// DRIVER COMMAND CENTER</div>
+  
+  <div class="card">
+    <h2 id="shipmentDisplay">SHP-WAITING</h2>
+    <div style="margin: 15px 0;">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText">System Standby</span>
+    </div>
+    
+    <button id="toggleBtn" class="btn-start" onclick="toggleTracking()">START JOURNEY</button>
+    
+    <div class="info">
+      LAT: <span id="lat">0.000</span><br>
+      LNG: <span id="lng">0.000</span><br>
+      PINGS SENT: <span id="count">0</span>
+    </div>
+  </div>
+
+  <script>
+    let tracking = false;
+    let watchId = null;
+    let pingCount = 0;
+
+    // Use URL parameters to identify the driver (e.g., driver_app?id=SHP0001&co=FastFreight)
+    const params = new URLSearchParams(window.location.search);
+    const shipmentId = params.get('id') || 'SHP0001';
+    const company = params.get('co') || 'FastFreight';
+    document.getElementById('shipmentDisplay').textContent = shipmentId;
+
+    function toggleTracking() {
+      if (!tracking) {
+        if (!navigator.geolocation) return alert("GPS not supported on this device.");
+        
+        tracking = true;
+        document.getElementById('toggleBtn').textContent = "STOP JOURNEY";
+        document.getElementById('toggleBtn').style.background = "#f75f5f";
+        document.getElementById('statusDot').classList.add('status-active');
+        document.getElementById('statusText').textContent = "Live Tracking Active";
+
+        // 🔴 START REAL-TIME GPS WATCHING
+        watchId = navigator.geolocation.watchPosition(sendPing, handleError, {
+          enableHighAccuracy: true,
+          maximumAge: 0
+        });
+      } else {
+        stopTracking();
+      }
+    }
+
+    function stopTracking() {
+      tracking = false;
+      navigator.geolocation.clearWatch(watchId);
+      document.getElementById('toggleBtn').textContent = "START JOURNEY";
+      document.getElementById('toggleBtn').style.background = "#3ddc6e";
+      document.getElementById('statusDot').classList.remove('status-active');
+      document.getElementById('statusText').textContent = "System Standby";
+    }
+
+    async function sendPing(pos) {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      document.getElementById('lat').textContent = lat.toFixed(4);
+      document.getElementById('lng').textContent = lng.toFixed(4);
+
+      try {
+        const res = await fetch('/api/v1/telemetry/ping', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Token': 'driver_secure_token_123'
+          },
+          body: JSON.stringify({ shipment_id: shipmentId, company: company, lat: lat, lng: lng })
+        });
+        if(res.ok) {
+          pingCount++;
+          document.getElementById('count').textContent = pingCount;
+        }
+      } catch (err) {
+        console.error("Ping failed", err);
+      }
+    }
+
+    function handleError(err) { console.warn(`ERROR(${err.code}): ${err.message}`); }
+  </script>
+</body>
+</html>

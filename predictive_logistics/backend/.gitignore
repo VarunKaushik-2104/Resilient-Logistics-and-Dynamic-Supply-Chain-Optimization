@@ -1,0 +1,10 @@
+# Ignore secret environment variables
+.env
+
+# Ignore Python virtual environments and cache
+venv/
+__pycache__/
+*.pyc
+
+# Ignore the AI model file (it's too large for standard GitHub)
+delay_model.pkl

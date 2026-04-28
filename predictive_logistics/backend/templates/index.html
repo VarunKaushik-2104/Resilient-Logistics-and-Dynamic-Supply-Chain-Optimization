@@ -1,0 +1,1774 @@
+import os
+from dotenv import load_dotenv
+
+# Load the secrets from the .env file
+load_dotenv()
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Predictive Logistics Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ gmaps_key }}&libraries=places&callback=mapsLoaded" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ gmaps_key }}&libraries=places"></script>
+<style>
+/* ═══════════════════════════════════════════
+   THEME TOKENS
+═══════════════════════════════════════════ */
+:root {
+  --sans: 'Syne', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --transition: 0.22s ease;
+}
+
+/* DARK (default) */
+[data-theme="dark"] {
+  --bg:        #050c07;
+  --s1:        #091410;
+  --s2:        #0e1e17;
+  --s3:        #142b1f;
+  --s4:        #1b3829;
+  --border:    #1e3328;
+  --border2:   #2a4a38;
+  --text:      #c8d8cc;
+  --muted:     #4d7a5e;
+  --faint:     #2a4a38;
+  --green:     #3ddc6e;
+  --green-dim: rgba(61,220,110,0.12);
+  --green-glow:rgba(61,220,110,0.25);
+  --amber:     #f0b429;
+  --red:       #f75f5f;
+  --blue:      #4da6f5;
+  --purple:    #b07ef8;
+  --white:     #e8f5ee;
+  --card-bg:   #091410;
+  --modal-bg:  #0b1a13;
+  --input-bg:  #0e1e17;
+  --overlay:   rgba(0,0,0,0.8);
+  --shadow:    0 8px 40px rgba(0,0,0,0.6);
+  --map-style: dark;
+}
+
+/* LIGHT */
+[data-theme="light"] {
+  --bg:        #f0f7f2;
+  --s1:        #ffffff;
+  --s2:        #f0f7f2;
+  --s3:        #e3f0e8;
+  --s4:        #d4e8db;
+  --border:    #c2dccb;
+  --border2:   #a8ccb5;
+  --text:      #1a3325;
+  --muted:     #537a62;
+  --faint:     #d4e8db;
+  --green:     #1a9944;
+  --green-dim: rgba(26,153,68,0.1);
+  --green-glow:rgba(26,153,68,0.2);
+  --amber:     #c47d0a;
+  --red:       #d93030;
+  --blue:      #1a6ec9;
+  --purple:    #7c3fd4;
+  --white:     #0a1f12;
+  --card-bg:   #ffffff;
+  --modal-bg:  #f8fcf9;
+  --input-bg:  #f0f7f2;
+  --overlay:   rgba(0,0,0,0.5);
+  --shadow:    0 8px 40px rgba(0,0,0,0.15);
+  --map-style: light;
+}
+
+/* ═══════════════════════════════════════════
+   RESET + BASE
+═══════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  transition: background var(--transition), color var(--transition);
+}
+
+/* Noise texture overlay for depth */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.6;
+}
+
+/* ═══════════════════════════════════════════
+   TOPBAR
+═══════════════════════════════════════════ */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--s1);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.logo {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0.04em;
+}
+
+.logo-text { color: var(--white); }
+.logo-text span { color: var(--green); }
+
+.pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green);
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+
+.tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--s2);
+  border: 1px solid var(--border);
+  padding: 3px 9px;
+  border-radius: 4px;
+  transition: all var(--transition);
+}
+.live {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid var(--green-glow);
+  padding: 3px 9px;
+  border-radius: 4px;
+}
+
+/* Theme Toggle */
+.theme-toggle {
+  width: 38px; height: 22px;
+  border-radius: 11px;
+  background: var(--s3);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--green);
+  top: 2px;
+  left: 2px;
+  transition: transform var(--transition), background var(--transition);
+  box-shadow: 0 0 6px var(--green-glow);
+}
+[data-theme="light"] .theme-toggle::after { transform: translateX(16px); }
+.theme-icon { font-size: 12px; line-height: 1; }
+.theme-wrap { display: flex; align-items: center; gap: 6px; }
+
+/* ═══════════════════════════════════════════
+   SEARCH BAR
+═══════════════════════════════════════════ */
+.search-bar {
+  padding: 10px 28px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--border);
+  display: none;
+  align-items: center;
+  gap: 10px;
+  transition: background var(--transition);
+}
+.search-bar.show { display: flex; }
+
+.search-wrap { position: relative; flex: 1; }
+.search-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 14px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  transition: border var(--transition), background var(--transition);
+}
+.search-input:focus { border-color: var(--green); }
+.search-input::placeholder { color: var(--muted); }
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--s2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  z-index: 100;
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+.search-result-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 12px;
+}
+.search-result-item:hover { background: var(--s3); }
+.search-result-item:last-child { border-bottom: none; }
+
+/* ═══════════════════════════════════════════
+   MAIN + BUTTONS
+═══════════════════════════════════════════ */
+.main { max-width: 1240px; margin: 0 auto; padding: 28px; position: relative; z-index: 1; }
+
+.btn {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 9px 20px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-green {
+  background: var(--green);
+  color: var(--bg);
+  box-shadow: 0 0 20px var(--green-glow);
+}
+.btn-green:hover { filter: brightness(1.1); box-shadow: 0 0 28px var(--green-glow); }
+.btn-green:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border2);
+}
+.btn-ghost:hover { border-color: var(--green); color: var(--green); }
+.btn-row { display: flex; gap: 8px; margin-top: 18px; justify-content: center; flex-wrap: wrap; }
+
+/* ═══════════════════════════════════════════
+   UPLOAD
+═══════════════════════════════════════════ */
+.upload-hero { margin-bottom: 28px; }
+.upload-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--green);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.upload-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--white);
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+.upload-sub { font-size: 14px; color: var(--muted); max-width: 540px; line-height: 1.6; }
+
+.upload-zone {
+  border: 1.5px dashed var(--border2);
+  border-radius: 12px;
+  padding: 44px;
+  text-align: center;
+  background: var(--s1);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.upload-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, var(--green-dim) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.upload-zone:hover::before, .upload-zone.drag::before { opacity: 1; }
+.upload-zone:hover, .upload-zone.drag { border-color: var(--green); }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-icon { font-size: 32px; margin-bottom: 10px; }
+.upload-zone h2 { font-size: 17px; color: var(--white); margin-bottom: 5px; font-weight: 700; }
+.upload-zone p { font-size: 12px; color: var(--muted); }
+.file-name { font-family: var(--mono); font-size: 11px; color: var(--green); margin-top: 8px; }
+
+/* ═══════════════════════════════════════════
+   LOADING
+═══════════════════════════════════════════ */
+.loading { display: none; text-align: center; padding: 80px; }
+.loading.show { display: block; }
+.spinner {
+  width: 36px; height: 36px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-family: var(--mono); font-size: 12px; color: var(--muted); line-height: 1.8; }
+.loading-text em { color: var(--green); font-style: normal; }
+
+/* ═══════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════ */
+.tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--s2);
+  border-radius: 9px;
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+.tab {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 16px;
+  text-align: center;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.15s;
+  border: none;
+  background: transparent;
+  letter-spacing: 0.02em;
+}
+.tab.active { background: var(--s4); color: var(--green); }
+.tab:hover:not(.active) { color: var(--text); }
+
+/* ═══════════════════════════════════════════
+   KPI GRID
+═══════════════════════════════════════════ */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.kpi {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--transition);
+}
+.kpi::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--green);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.kpi:hover::after { opacity: 0.5; }
+.kpi-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+.kpi-val {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: var(--mono);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.kpi-sub { font-size: 10px; color: var(--muted); }
+
+/* ═══════════════════════════════════════════
+   AI SUMMARY PANEL
+═══════════════════════════════════════════ */
+.ai-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: 10px;
+  padding: 18px 22px;
+  margin-bottom: 18px;
+  transition: all var(--transition);
+}
+.ai-panel-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ai-panel-text { font-size: 13.5px; line-height: 1.85; color: var(--text); }
+
+/* ═══════════════════════════════════════════
+   TABLE
+═══════════════════════════════════════════ */
+.table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.table-label { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+.filter-row { display: flex; gap: 4px; }
+.filter-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 4px 11px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-btn.active { color: var(--green); border-color: var(--green); background: var(--green-dim); }
+.filter-btn:hover:not(.active) { border-color: var(--border2); color: var(--text); }
+
+.table-wrap {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all var(--transition);
+}
+table { width: 100%; border-collapse: collapse; }
+th {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 11px 14px;
+  text-align: left;
+  background: var(--s2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+td {
+  padding: 10px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  transition: background 0.1s;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--s2); }
+
+.score-wrap { display: flex; align-items: center; gap: 7px; }
+.score-bar { width: 56px; height: 5px; background: var(--s3); border-radius: 3px; overflow: hidden; }
+.score-fill { height: 100%; border-radius: 3px; }
+.score-num { font-family: var(--mono); font-size: 11px; font-weight: 700; width: 28px; }
+
+.risk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 5px;
+  letter-spacing: 0.04em;
+}
+.risk-HIGH   { background: rgba(247,95,95,0.1);  color: var(--red);   border: 1px solid rgba(247,95,95,0.3); }
+.risk-MEDIUM { background: rgba(240,180,41,0.1); color: var(--amber); border: 1px solid rgba(240,180,41,0.3); }
+.risk-LOW    { background: var(--green-dim);      color: var(--green); border: 1px solid var(--green-glow); }
+.risk-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+.act-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+  margin-right: 3px;
+  transition: all 0.15s;
+}
+.act-btn:hover { border-color: var(--green); background: var(--green-dim); }
+
+/* ═══════════════════════════════════════════
+   MAP TAB
+═══════════════════════════════════════════ */
+#mapContainer {
+  height: 500px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--s2);
+  position: relative;
+}
+.map-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--muted);
+  gap: 8px;
+}
+.map-placeholder p { font-size: 13px; color: var(--text); }
+.map-placeholder small { font-size: 11px; }
+
+/* Leaflet-based fallback map */
+#leafletMap { height: 100%; width: 100%; }
+
+/* Risk legend */
+.map-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* ═══════════════════════════════════════════
+   MODEL TAB
+═══════════════════════════════════════════ */
+.model-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.model-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  transition: all var(--transition);
+}
+.model-card-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 6px;
+}
+.model-card-val { font-size: 22px; font-weight: 800; font-family: var(--mono); color: var(--green); }
+
+.feat-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.feat-name { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 148px; flex-shrink: 0; }
+.feat-bar-wrap { flex: 1; height: 6px; background: var(--s3); border-radius: 3px; overflow: hidden; }
+.feat-bar-fill { height: 100%; background: var(--green); border-radius: 3px; transition: width 1s ease; }
+.feat-pct { font-family: var(--mono); font-size: 11px; color: var(--green); width: 42px; text-align: right; font-weight: 600; }
+
+/* ═══════════════════════════════════════════
+   CHATBOT
+═══════════════════════════════════════════ */
+.chat-fab {
+  position: fixed;
+  bottom: 28px; right: 28px;
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  background: var(--green);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: var(--bg);
+  font-weight: 700;
+  box-shadow: 0 4px 24px var(--green-glow);
+  z-index: 200;
+  transition: all 0.2s;
+}
+.chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 32px var(--green-glow); }
+
+.chat-window {
+  position: fixed;
+  bottom: 96px; right: 28px;
+  width: 368px; height: 500px;
+  background: var(--s1);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  display: none;
+  flex-direction: column;
+  z-index: 200;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: background var(--transition);
+}
+.chat-window.open { display: flex; }
+.chat-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--s2);
+}
+.chat-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.chat-title-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+.chat-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-msg {
+  max-width: 88%;
+  padding: 10px 13px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.chat-msg.user {
+  background: var(--green-dim);
+  border: 1px solid var(--green-glow);
+  align-self: flex-end;
+  color: var(--text);
+}
+.chat-msg.bot {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+  color: var(--text);
+}
+.chat-msg.bot.typing { color: var(--muted); font-style: italic; }
+.chat-input-row {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.chat-input {
+  flex: 1;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  outline: none;
+  transition: border var(--transition), background var(--transition);
+}
+.chat-input:focus { border-color: var(--green); }
+.chat-send {
+  background: var(--green);
+  border: none;
+  border-radius: 7px;
+  width: 36px; height: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--bg);
+  font-weight: 800;
+  transition: all 0.15s;
+}
+.chat-send:hover { filter: brightness(1.1); }
+
+/* ═══════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════ */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.overlay.open { display: flex; }
+.modal {
+  background: var(--modal-bg);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 82vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+  transition: background var(--transition);
+}
+.modal-head {
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.modal-title { font-size: 15px; font-weight: 700; color: var(--white); }
+.modal-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 3px; }
+.close-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; }
+.modal-body { padding: 20px 22px; }
+.modal-section { margin-bottom: 16px; }
+.modal-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 9px;
+}
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat-item {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px;
+  transition: all var(--transition);
+}
+.stat-item-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.stat-item-val { font-family: var(--mono); font-size: 15px; font-weight: 700; }
+
+.ai-box {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-left: 2.5px solid var(--green);
+  border-radius: 8px;
+  padding: 13px;
+  font-size: 13px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.maps-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--green);
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 9px 16px;
+  border-radius: 7px;
+  text-decoration: none;
+  margin-top: 12px;
+  transition: all 0.15s;
+}
+.maps-link:hover { filter: brightness(1.1); }
+
+/* ═══════════════════════════════════════════
+   COLORS
+═══════════════════════════════════════════ */
+.c-red    { color: var(--red); }
+.c-amber  { color: var(--amber); }
+.c-green  { color: var(--green); }
+.c-blue   { color: var(--blue); }
+.c-white  { color: var(--white); }
+.c-muted  { color: var(--muted); }
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .tag { display: none; }
+}
+@media (max-width: 600px) {
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .main { padding: 16px; }
+  .topbar { padding: 12px 16px; }
+  .chat-window { width: calc(100vw - 24px); right: 12px; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Entry animations */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fadeUp 0.45s ease both; }
+.delay-1 { animation-delay: 0.05s; }
+.delay-2 { animation-delay: 0.1s; }
+.delay-3 { animation-delay: 0.15s; }
+</style>
+
+<!-- Leaflet for fallback map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<div class="topbar">
+  <div class="logo">
+    <div class="pulse"></div>
+    <span class="logo-text">PRED<span>-</span>LOGISTICS <span style="opacity:0.4">/</span> v3</span>
+  </div>
+  <div class="topbar-right">
+    <span class="tag">MongoDB Atlas</span>
+    <span class="tag">Random Forest ML</span>
+    <span class="tag">Google Solution Challenge</span>
+    <span class="live">● LIVE</span>
+    <button class="btn btn-ghost" style="padding: 4px 10px; font-size: 10px; margin-right: 10px;" onclick="handleLogout()">Logout</button>
+    <div class="theme-wrap" title="Toggle theme">
+      <span class="theme-icon" id="themeIconLeft">🌙</span>
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()"></button>
+      <span class="theme-icon" id="themeIconRight">☀️</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── SEARCH BAR ── -->
+<div class="search-bar" id="searchBar">
+  <div class="search-wrap">
+    <input class="search-input" id="searchInput"
+      placeholder="Search shipment ID, city, carrier… e.g. SHP0042, Mumbai, FastFreight"
+      oninput="onSearch(this.value)"/>
+    <div class="search-results" id="searchResults" style="display:none"></div>
+  </div>
+  <button class="btn btn-ghost" style="font-size:11px;padding:7px 13px" onclick="clearSearch()">✕ Clear</button>
+</div>
+
+<!-- ── MAIN ── -->
+<div class="main">
+
+  <!-- UPLOAD SECTION -->
+  <div id="uploadSection">
+    <div class="upload-hero fade-up">
+      <div class="upload-eyebrow">// Predictive Logistics Dashboard v3</div>
+      <h1 class="upload-title">Proactive Supply Chain<br/>Risk Management</h1>
+      <p class="upload-sub">ML-powered delay prediction · MongoDB storage · Gemini AI chatbot · Google Maps routing</p>
+    </div>
+    <div class="upload-zone fade-up delay-1" id="dropZone">
+      <input type="file" id="fileInput" accept=".csv"/>
+      <div class="upload-icon">📋</div>
+      <h2>Drop shipment CSV here</h2>
+      <p>Columns: shipment_id, origin, destination, weather_condition, traffic_index, eta_hours, current_hours</p>
+      <div class="file-name" id="fileName"></div>
+    </div>
+    <div class="btn-row fade-up delay-2">
+      <button class="btn btn-green" id="analyzeBtn" onclick="analyze()" disabled>⚡ Run ML Risk Analysis</button>
+      <button class="btn btn-ghost" onclick="loadSample()">Load Sample Data</button>
+      <button class="btn btn-ghost" onclick="loadFromMongo()">Load from MongoDB</button>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">
+      Running Random Forest ML model…<br/>
+      <em>Saving to MongoDB · Generating AI summary…</em>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard" style="display:none">
+
+    <div class="tabs-row">
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('overview',this)">Overview</button>
+        <button class="tab" onclick="showTab('map',this)">🗺 Route Map</button>
+        <button class="tab" onclick="showTab('model',this)">🤖 ML Model</button>
+      </div>
+      <button class="btn btn-ghost" style="font-size:11px;padding:6px 13px" onclick="resetDashboard()">↑ Upload New</button>
+    </div>
+
+    <!-- OVERVIEW TAB -->
+    <div id="tab-overview">
+
+      <div class="kpi-grid fade-up">
+        <div class="kpi">
+          <div class="kpi-label">Total Shipments</div>
+          <div class="kpi-val c-green" id="kpiTotal">0</div>
+          <div class="kpi-sub">In MongoDB</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">🔴 High Risk</div>
+          <div class="kpi-val c-red" id="kpiHigh">0</div>
+          <div class="kpi-sub">Action needed</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">🟡 Medium Risk</div>
+          <div class="kpi-val c-amber" id="kpiMedium">0</div>
+          <div class="kpi-sub">Monitor</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">🟢 Low Risk</div>
+          <div class="kpi-val c-green" id="kpiLow">0</div>
+          <div class="kpi-sub">On schedule</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">ML Accuracy</div>
+          <div class="kpi-val c-green" id="kpiAccuracy">—</div>
+          <div class="kpi-sub">Random Forest</div>
+        </div>
+      </div>
+
+      <div class="ai-panel fade-up delay-1">
+        <div class="ai-panel-label">✦ Gemini AI — Executive Summary</div>
+        <div class="ai-panel-text" id="geminiText">Awaiting analysis…</div>
+      </div>
+
+      <div class="table-header fade-up delay-2">
+        <span class="table-label">// Shipment Risk Table — <span id="tableCount">0</span> records</span>
+        <div class="filter-row">
+          <button class="filter-btn active" onclick="filterTable('ALL',this)">ALL</button>
+          <button class="filter-btn" onclick="filterTable('HIGH',this)">HIGH</button>
+          <button class="filter-btn" onclick="filterTable('MEDIUM',this)">MEDIUM</button>
+          <button class="filter-btn" onclick="filterTable('LOW',this)">LOW</button>
+        </div>
+      </div>
+
+      <div class="table-wrap fade-up delay-3">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Route</th><th>Weather</th><th>Traffic</th>
+            <th>ML Score</th><th>Risk</th><th>ETA Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MAP TAB -->
+    <div id="tab-map" style="display:none">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        // Route Risk Map — Click a marker to see shipment details
+      </div>
+      <div id="mapContainer">
+        <div class="map-placeholder" id="mapPlaceholder">
+          <div style="font-size:36px">🗺</div>
+          <p>Map loads when this tab is opened</p>
+          <small>Uses Google Maps if API key is set, otherwise Leaflet OpenStreetMap</small>
+        </div>
+        <div id="leafletMap" style="display:none;height:100%;width:100%"></div>
+      </div>
+      <div class="map-legend" id="mapLegend" style="display:none">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>HIGH risk</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>MEDIUM risk</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>LOW risk</div>
+        <div class="legend-item c-muted" style="margin-left:auto;font-family:var(--mono);font-size:10px" id="mapNote"></div>
+      </div>
+    </div>
+
+    <!-- MODEL TAB -->
+    <div id="tab-model" style="display:none">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px">
+        // Random Forest ML Model — Trained on 1000 synthetic shipment records
+      </div>
+      <div class="model-grid" id="modelGrid"></div>
+      <div class="table-wrap" style="padding:18px">
+        <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px">Feature Importances</div>
+        <div id="featureImportances"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── CHATBOT FAB ── -->
+<button class="chat-fab" onclick="toggleChat()" title="Ask Gemini AI">✦</button>
+
+<!-- ── CHAT WINDOW ── -->
+<div class="chat-window" id="chatWindow">
+  <div class="chat-head">
+    <div class="chat-title">
+      <div class="chat-title-dot"></div>
+      Gemini Logistics AI
+    </div>
+    <button class="chat-close" onclick="toggleChat()">✕</button>
+  </div>
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-msg bot">
+      Hi! I'm your logistics AI assistant. Ask me anything about your shipments, routes, or risk factors. Try:<br/><br/>
+      • "Which shipments are highest risk?"<br/>
+      • "What should I do about SHP0008?"<br/>
+      • "Why is the Mumbai–Delhi route delayed?"
+    </div>
+  </div>
+  <div class="chat-input-row">
+    <input class="chat-input" id="chatInput"
+      placeholder="Ask about your shipments…"
+      onkeydown="if(event.key==='Enter')sendChat()"/>
+    <button class="chat-send" onclick="sendChat()">↑</button>
+  </div>
+</div>
+
+<!-- ── MODAL ── -->
+<div class="overlay" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="modal-sub" id="modalSub"></div>
+      </div>
+      <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ─────────────────────────────────────────────────
+let allShipments = [];
+let selectedFile = null;
+let chatHistory = [];
+let googleMapObj = null;
+let leafletMapObj = null;
+let mapInitialized = false;
+let mapsApiReady = false;
+
+// ─── Google Maps callback ───────────────────────────────────
+function mapsLoaded() { mapsApiReady = true; }
+
+// ─── Theme Toggle ───────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  // Re-init map if open
+  if(mapInitialized) {
+    mapInitialized = false;
+    if(document.getElementById('tab-map').style.display !== 'none') initMap();
+  }
+}
+// Restore saved theme
+(function() {
+  const saved = localStorage.getItem('theme');
+  if(saved) document.documentElement.setAttribute('data-theme', saved);
+})();
+
+// ─── File Handling ──────────────────────────────────────────
+const fileInput = document.getElementById('fileInput');
+const dropZone  = document.getElementById('dropZone');
+fileInput.addEventListener('change', e => { if(e.target.files[0]) setFile(e.target.files[0]); });
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+function setFile(f) {
+  selectedFile = f;
+  document.getElementById('fileName').textContent = '✓ ' + f.name;
+  document.getElementById('analyzeBtn').disabled = false;
+}
+function loadSample() {
+  fetch('/static/shipments.csv')
+    .then(r => r.blob())
+    .then(b => setFile(new File([b], 'shipments.csv', {type:'text/csv'})))
+    .catch(() => alert('Could not load sample. Make sure the server is running.'));
+}
+
+// ─── Analyze ────────────────────────────────────────────────
+async function analyze() {
+  if(!selectedFile) return;
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('loading').classList.add('show');
+  const form = new FormData();
+  form.append('file', selectedFile);
+  try {
+    const res  = await fetch('/analyze', {method:'POST', body:form});
+    const data = await res.json();
+    renderDashboard(data);
+    loadModelInfo();
+  } catch(e) {
+    alert('Server error. Make sure uvicorn is running on port 8000.');
+    resetDashboard();
+  } finally {
+    document.getElementById('loading').classList.remove('show');
+  }
+}
+
+// ─── Load from MongoDB ──────────────────────────────────────
+async function loadFromMongo() {
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('loading').classList.add('show');
+  try {
+    const res  = await fetch('/shipments');
+    const data = await res.json();
+    if(!data.shipments.length) {
+      alert('No shipments in MongoDB yet. Upload a CSV first.');
+      resetDashboard(); return;
+    }
+    const ships = data.shipments;
+    const h = ships.filter(s => s.risk_level === 'HIGH').length;
+    const m = ships.filter(s => s.risk_level === 'MEDIUM').length;
+    const l = ships.filter(s => s.risk_level === 'LOW').length;
+    const avg = Math.round(ships.reduce((a,s) => a + s.delay_probability, 0) / ships.length);
+    renderDashboard({
+      total: ships.length, high_risk: h, medium_risk: m, low_risk: l, avg_score: avg,
+      shipments: ships,
+      gemini_summary: 'Loaded from MongoDB. Run fresh analysis to regenerate AI summary.',
+      model_accuracy: null
+    });
+    loadModelInfo();
+  } catch(e) {
+    alert('Error loading from MongoDB. Check server connection.');
+    resetDashboard();
+  } finally {
+    document.getElementById('loading').classList.remove('show');
+  }
+}
+
+function resetDashboard() {
+  document.getElementById('uploadSection').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('loading').classList.remove('show');
+  document.getElementById('searchBar').classList.remove('show');
+  mapInitialized = false;
+}
+
+// ─── Render Dashboard ────────────────────────────────────────
+function renderDashboard(data) {
+  allShipments = data.shipments;
+  document.getElementById('kpiTotal').textContent    = data.total;
+  document.getElementById('kpiHigh').textContent     = data.high_risk;
+  document.getElementById('kpiMedium').textContent   = data.medium_risk;
+  document.getElementById('kpiLow').textContent      = data.low_risk;
+  document.getElementById('kpiAccuracy').textContent = data.model_accuracy ? (data.model_accuracy * 100).toFixed(1) + '%' : '—';
+  document.getElementById('geminiText').textContent  = data.gemini_summary;
+  document.getElementById('tableCount').textContent  = data.total;
+  renderTable(allShipments);
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('searchBar').classList.add('show');
+}
+
+// ─── Render Table ────────────────────────────────────────────
+// ─── Render Table ────────────────────────────────────────────
+function renderTable(ships) {
+  const wIcons = {'Clear':'☀️','Heavy Rain':'🌧️','Fog':'🌫️','Cyclone':'🌀', 'Clouds':'☁️'};
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  ships.forEach(s => {
+    const icon   = wIcons[s.weather] || '🌤️';
+    const sc     = s.delay_probability >= 65 ? 'var(--red)' : s.delay_probability >= 35 ? 'var(--amber)' : 'var(--green)';
+    const tPct   = Math.round((s.traffic_index || 0) * 100);
+    const tColor = tPct > 70 ? 'var(--red)' : tPct > 40 ? 'var(--amber)' : 'var(--green)';
+    const etaLabel = s.current_hours > s.eta_hours
+      ? `<span style="color:var(--red)">+${Math.round((s.current_hours - s.eta_hours) * 60)}min</span>`
+      : `<span style="color:var(--green)">On time</span>`;
+    const factorsEsc = ((s.delay_factors || []).join('; ')).replace(/'/g, "\\'");
+    const tr = document.createElement('tr');
+    tr.dataset.risk = s.risk_level;
+    tr.innerHTML = `
+      <td style="font-family:var(--mono);font-weight:700;color:var(--white)">${s.shipment_id}</td>
+      <td style="font-size:12px">${s.origin}<span style="color:var(--muted);margin:0 3px">→</span>${s.destination}</td>
+      <td>${icon} <span style="color:var(--muted);font-size:11px">${s.weather || '—'}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:38px;height:4px;background:var(--s3);border-radius:2px;overflow:hidden">
+            <div style="width:${tPct}%;height:100%;background:${tColor};border-radius:2px"></div>
+          </div>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${tPct}%</span>
+        </div>
+      </td>
+      <td>
+        <div class="score-wrap">
+          <div class="score-bar"><div class="score-fill" style="width:${s.delay_probability}%;background:${sc}"></div></div>
+          <span class="score-num" style="color:${sc}">${s.delay_probability}</span>
+        </div>
+      </td>
+      <td><span class="risk risk-${s.risk_level}"><span class="risk-dot"></span>${s.risk_level}</span></td>
+      <td>${etaLabel}</td>
+      <td>
+        <button class="act-btn" onclick="showRoute(this, '${s.shipment_id}','${s.origin}','${s.destination}','${s.risk_level}')">Route</button>
+        <button class="act-btn" onclick="showMitigation('${s.shipment_id}','${s.origin}','${s.destination}','${s.risk_level}',${s.delay_probability},'${factorsEsc}')">Mitigate</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── Filter ──────────────────────────────────────────────────
+function filterTable(risk, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable(risk === 'ALL' ? allShipments : allShipments.filter(s => s.risk_level === risk));
+}
+
+// ─── Tabs ────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  ['overview','map','model'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+  });
+  if(name === 'map' && !mapInitialized) initMap();
+}
+
+// ─── Map (Google Maps + Leaflet fallback) ───────────────────
+const CITY_COORDS = {
+  'Mumbai': {lat:19.076, lng:72.877}, 'Delhi': {lat:28.614, lng:77.209},
+  'Bangalore': {lat:12.972, lng:77.594}, 'Chennai': {lat:13.082, lng:80.270},
+  'Kolkata': {lat:22.572, lng:88.363}, 'Hyderabad': {lat:17.385, lng:78.487},
+  'Pune': {lat:18.520, lng:73.856}, 'Ahmedabad': {lat:23.022, lng:72.571},
+  'Jaipur': {lat:26.912, lng:75.787}, 'Lucknow': {lat:26.847, lng:80.947},
+  'Surat': {lat:21.170, lng:72.831}, 'Kochi': {lat:9.939, lng:76.270},
+  'Nagpur': {lat:21.145, lng:79.088}, 'Bhopal': {lat:23.259, lng:77.413},
+  'Indore': {lat:22.719, lng:75.857}, 'Patna': {lat:25.594, lng:85.137},
+  'Vadodara': {lat:22.307, lng:73.181}, 'Ludhiana': {lat:30.900, lng:75.857},
+  'Agra': {lat:27.176, lng:78.008}, 'Nashik': {lat:20.000, lng:73.780},
+  'Gurgaon': {lat:28.459, lng:77.026}, 'Amritsar': {lat:31.634, lng:74.872},
+  'Mysore': {lat:12.295, lng:76.639}, 'Ghaziabad': {lat:28.669, lng:77.453},
+  'Rajkot': {lat:22.303, lng:70.802}, 'Solapur': {lat:17.659, lng:75.906},
+  'Srinagar': {lat:34.083, lng:74.797}, 'Noida': {lat:28.535, lng:77.391},
+  'Chandigarh': {lat:30.733, lng:76.779}, 'Jabalpur': {lat:23.181, lng:79.986},
+  'Faridabad': {lat:28.408, lng:77.319}, 'Vijayawada': {lat:16.506, lng:80.648},
+  'Navi Mumbai': {lat:19.033, lng:73.029}, 'Varanasi': {lat:25.317, lng:82.973},
+  'Madurai': {lat:9.925, lng:78.119}, 'Kota': {lat:25.213, lng:75.864},
+  'Guwahati': {lat:26.144, lng:91.736}, 'Jodhpur': {lat:26.238, lng:73.024},
+  'Visakhapatnam': {lat:17.686, lng:83.218}, 'Meerut': {lat:28.984, lng:77.706},
+  'Howrah': {lat:22.595, lng:88.324}, 'Gwalior': {lat:26.212, lng:78.177}
+};
+
+const RISK_COLORS = { HIGH:'#f75f5f', MEDIUM:'#f0b429', LOW:'#3ddc6e' };
+
+function initMap() {
+  const placeholder = document.getElementById('mapPlaceholder');
+  const leafletDiv  = document.getElementById('leafletMap');
+  const legend      = document.getElementById('mapLegend');
+  const mapNote     = document.getElementById('mapNote');
+
+  // Try Google Maps first
+  if(mapsApiReady && typeof google !== 'undefined') {
+    placeholder.style.display = 'none';
+    leafletDiv.style.display = 'none';
+
+    // Use the mapContainer directly for Google Maps
+    const container = document.getElementById('mapContainer');
+    container.innerHTML = ''; // Clear placeholder
+    container.style.background = '';
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const darkStyles = [
+      {elementType:'geometry',           stylers:[{color:'#0e1e17'}]},
+      {elementType:'labels.text.fill',   stylers:[{color:'#4d7a5e'}]},
+      {elementType:'labels.text.stroke', stylers:[{color:'#050c07'}]},
+      {featureType:'road',               elementType:'geometry', stylers:[{color:'#1b3829'}]},
+      {featureType:'road',               elementType:'labels.text.fill', stylers:[{color:'#3ddc6e'}]},
+      {featureType:'water',              elementType:'geometry', stylers:[{color:'#050c07'}]},
+      {featureType:'poi',                stylers:[{visibility:'off'}]},
+      {featureType:'transit',            stylers:[{visibility:'off'}]},
+    ];
+
+    googleMapObj = new google.maps.Map(container, {
+      center: {lat:22.0, lng:78.5}, zoom: 5,
+      mapTypeId: 'roadmap',
+      styles: isDark ? darkStyles : [],
+      disableDefaultUI: false,
+      zoomControl: true,
+      streetViewControl: false,
+      mapTypeControl: false,
+    });
+
+    allShipments.forEach(s => {
+      const oc = CITY_COORDS[s.origin];
+      const dc = CITY_COORDS[s.destination];
+      if(!oc || !dc) return;
+      const color = RISK_COLORS[s.risk_level] || '#4da6f5';
+      const mid   = {lat:(oc.lat+dc.lat)/2, lng:(oc.lng+dc.lng)/2};
+
+      new google.maps.Polyline({
+        path:[oc,dc], map: googleMapObj,
+        strokeColor: color, strokeOpacity: 0.55, strokeWeight: 2
+      });
+
+      const marker = new google.maps.Marker({
+        position: mid, map: googleMapObj, title: s.shipment_id,
+        icon: {path: google.maps.SymbolPath.CIRCLE, scale:8, fillColor:color, fillOpacity:0.9, strokeColor:'#fff', strokeWeight:1.5}
+      });
+
+      const infoContent = `<div style="background:${isDark?'#091410':'#fff'};color:${isDark?'#c8d8cc':'#1a3325'};padding:12px 14px;border-radius:8px;font-family:monospace;font-size:12px;line-height:1.7;min-width:180px">
+        <strong style="color:${isDark?'#e8f5ee':'#0a1f12'};font-size:13px">${s.shipment_id}</strong><br/>
+        ${s.origin} → ${s.destination}<br/>
+        Risk: <span style="color:${color};font-weight:700">${s.risk_level}</span><br/>
+        Delay Score: <strong>${s.delay_probability}%</strong>
+      </div>`;
+      const infoWindow = new google.maps.InfoWindow({content: infoContent});
+      marker.addListener('click', () => infoWindow.open(googleMapObj, marker));
+    });
+
+    mapNote.textContent = 'Google Maps · ' + allShipments.length + ' shipments';
+    legend.style.display = 'flex';
+    mapInitialized = true;
+    return;
+  }
+
+  // Leaflet fallback (OpenStreetMap — no API key needed!)
+  placeholder.style.display = 'none';
+  leafletDiv.style.display = 'block';
+  legend.style.display = 'flex';
+  mapNote.textContent = 'OpenStreetMap (no Maps API key set)';
+
+  // Destroy previous instance
+  if(leafletMapObj) { leafletMapObj.remove(); leafletMapObj = null; }
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+  leafletMapObj = L.map('leafletMap', { center:[22.0, 78.5], zoom:5 });
+
+  // Choose tile based on theme
+  const tileUrl = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+  L.tileLayer(tileUrl, {
+    attribution: '© OpenStreetMap contributors © CARTO',
+    subdomains: 'abcd', maxZoom: 19
+  }).addTo(leafletMapObj);
+
+  allShipments.forEach(s => {
+    const oc = CITY_COORDS[s.origin];
+    const dc = CITY_COORDS[s.destination];
+    if(!oc || !dc) return;
+    const color = RISK_COLORS[s.risk_level] || '#4da6f5';
+
+    // Route line
+    L.polyline([[oc.lat, oc.lng],[dc.lat, dc.lng]], {
+      color, weight: 2, opacity: 0.6
+    }).addTo(leafletMapObj);
+
+    // Midpoint marker
+    const midLat = (oc.lat + dc.lat) / 2;
+    const midLng = (oc.lng + dc.lng) / 2;
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 6px ${color}80;cursor:pointer"></div>`,
+      iconSize:[14,14], iconAnchor:[7,7]
+    });
+
+    L.marker([midLat, midLng], {icon})
+      .addTo(leafletMapObj)
+      .bindPopup(`<div style="font-family:monospace;font-size:12px;line-height:1.8;min-width:170px">
+        <strong style="font-size:13px">${s.shipment_id}</strong><br/>
+        ${s.origin} → ${s.destination}<br/>
+        Risk: <span style="color:${color};font-weight:700">${s.risk_level}</span><br/>
+        Delay Score: <strong>${s.delay_probability}%</strong>
+      </div>`);
+  });
+
+  mapInitialized = true;
+}
+
+// ─── Model Info ──────────────────────────────────────────────
+async function loadModelInfo() {
+  try {
+    const res  = await fetch('/model-info');
+    const data = await res.json();
+    document.getElementById('modelGrid').innerHTML = `
+      <div class="model-card">
+        <div class="model-card-label">Algorithm</div>
+        <div style="font-family:var(--mono);font-size:14px;color:var(--text);font-weight:600">Random Forest</div>
+      </div>
+      <div class="model-card">
+        <div class="model-card-label">Training Samples</div>
+        <div class="model-card-val">${data.training_samples?.toLocaleString()}</div>
+      </div>
+      <div class="model-card">
+        <div class="model-card-label">Test Accuracy</div>
+        <div class="model-card-val">${(data.accuracy * 100).toFixed(1)}%</div>
+      </div>
+      <div class="model-card">
+        <div class="model-card-label">CV Score (5-fold)</div>
+        <div class="model-card-val">${(data.cv_score * 100).toFixed(1)}%</div>
+      </div>`;
+
+    const fiEl = document.getElementById('featureImportances');
+    fiEl.innerHTML = '';
+    const sorted = Object.entries(data.feature_importances).sort((a,b) => b[1] - a[1]);
+    sorted.forEach(([feat, imp]) => {
+      fiEl.innerHTML += `
+        <div class="feat-bar-row">
+          <span class="feat-name">${feat.replace(/_/g,' ')}</span>
+          <div class="feat-bar-wrap">
+            <div class="feat-bar-fill" style="width:${imp*100}%"></div>
+          </div>
+          <span class="feat-pct">${(imp*100).toFixed(1)}%</span>
+        </div>`;
+    });
+  } catch(e) { console.log('Could not load model info'); }
+}
+
+// ─── Search ──────────────────────────────────────────────────
+let searchTimeout = null;
+function onSearch(q) {
+  clearTimeout(searchTimeout);
+  const resultsEl = document.getElementById('searchResults');
+  if(!q.trim()) { resultsEl.style.display = 'none'; return; }
+  searchTimeout = setTimeout(async () => {
+    try {
+      const res  = await fetch(`/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if(!data.results.length) { resultsEl.style.display = 'none'; return; }
+      resultsEl.style.display = 'block';
+      resultsEl.innerHTML = data.results.map(s => `
+        <div class="search-result-item" onclick="highlightShipment('${s.shipment_id}')">
+          <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--white)">${s.shipment_id}</span>
+          <span style="color:var(--muted);margin:0 6px">·</span>
+          <span style="font-size:12px">${s.origin} → ${s.destination}</span>
+          <span style="float:right">
+            <span class="risk risk-${s.risk_level}"><span class="risk-dot"></span>${s.risk_level}</span>
+          </span>
+        </div>`).join('');
+    } catch(e) {}
+  }, 280);
+}
+function highlightShipment(id) {
+  document.getElementById('searchResults').style.display = 'none';
+  document.getElementById('searchInput').value = id;
+  const s = allShipments.find(s => s.shipment_id === id);
+  if(s) showMitigation(s.shipment_id, s.origin, s.destination, s.risk_level, s.delay_probability, (s.delay_factors||[]).join('; '));
+}
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchResults').style.display = 'none';
+  renderTable(allShipments);
+}
+document.addEventListener('click', e => {
+  if(!e.target.closest('.search-wrap')) document.getElementById('searchResults').style.display = 'none';
+});
+
+// ─── Route Modal ─────────────────────────────────────────────
+// ─── Dropdown Route & Live Tracking ─────────────────────────
+// ─── Dropdown Route & Live Tracking ─────────────────────────
+// ─── Dropdown Route & Live Tracking ─────────────────────────
+// ─── 1. Google Maps Accurate Distance Calculator ───────────
+function getDrivingDistance(origin, destination) {
+  return new Promise((resolve, reject) => {
+    if (typeof google === 'undefined' || !google.maps) {
+      resolve("Distance Unavailable"); // Fallback if API key is missing
+      return;
+    }
+    const service = new google.maps.DistanceMatrixService();
+    service.getDistanceMatrix({
+      origins: [origin],
+      destinations: [destination],
+      travelMode: 'DRIVING'
+    }, (response, status) => {
+      if (status === 'OK' && response.rows[0].elements[0].status === 'OK') {
+        resolve(response.rows[0].elements[0].distance.text); // e.g., "1,204 km"
+      } else {
+        resolve("Calculation Error");
+      }
+    });
+  });
+}
+
+// ─── 2. Restored Dropdown Route & Live Tracking ────────────
+async function showRoute(btn, id, origin, destination, risk) {
+  const tr = btn.closest('tr');
+  const nextTr = tr.nextElementSibling;
+
+  if (nextTr && nextTr.classList.contains('dropdown-row')) {
+    nextTr.remove(); btn.textContent = 'Route'; return;
+  }
+  btn.textContent = 'Close';
+
+  const dropTr = document.createElement('tr');
+  dropTr.className = 'dropdown-row';
+  dropTr.innerHTML = `
+    <td colspan="8" style="padding: 0; border-bottom: 1px solid var(--border);">
+      <div style="background: var(--s2); padding: 18px 24px; display: flex; gap: 20px; flex-wrap: wrap; animation: fadeUp 0.3s ease;">
+        <div style="flex: 1; min-width: 320px;">
+          <div style="font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 12px; text-transform: uppercase;">// Live Tracking Info</div>
+          
+          <div class="stat-grid" style="margin-bottom: 16px; grid-template-columns: 1fr 1fr;">
+            <div class="stat-item">
+              <div class="stat-item-label">Current Live Location</div>
+              <div class="stat-item-val" id="loc-${id}" style="color: var(--blue);">Pinging GPS...</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-item-label">Live Local Weather</div>
+              <div class="stat-item-val" id="wea-${id}">Fetching...</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-item-label">Exact Road Distance</div>
+              <div class="stat-item-val" id="dist-${id}" style="color: var(--white);">Calculating...</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-item-label">Gemini AI Est. Time</div>
+              <div class="stat-item-val" id="dur-${id}" style="color: var(--green);">Calculating...</div>
+            </div>
+          </div>
+          
+          <div class="ai-box" style="margin-bottom: 0;">
+             <strong style="color:var(--green); font-size: 11px;">✦ AI OPTIMIZED DETOUR</strong><br>
+             <span id="sug-${id}">Analyzing real-time weather and exact distance...</span>
+          </div>
+        </div>
+        <div id="map-${id}" style="flex: 1.5; min-width: 300px; height: 280px; border-radius: 8px; border: 1px solid var(--border); overflow: hidden; z-index: 1;"></div>
+      </div>
+    </td>
+  `;
+  tr.after(dropTr);
+
+  try {
+    // 🔴 We now just call the Python route without sending the distance from JS
+    const res  = await fetch(`/route?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&risk_level=${risk}`);
+    const data = await res.json();
+    
+    document.getElementById(`dist-${id}`).textContent = data.distance;
+    document.getElementById(`dur-${id}`).textContent = data.duration;
+    document.getElementById(`loc-${id}`).textContent = data.live_location;
+    document.getElementById(`wea-${id}`).textContent = data.live_weather;
+    document.getElementById(`sug-${id}`).textContent = data.suggestion;
+    
+    setTimeout(() => { initMiniMap(id, origin, destination, risk, data.live_lat, data.live_lng); }, 100);
+  } catch(e) {
+    document.getElementById(`sug-${id}`).textContent = 'Error communicating with AI server.';
+  }
+}
+// (Make sure your initMiniMap function is still right below this in the file, it shouldn't need changing!)
+
+function initMiniMap(id, origin, destination, risk, liveLat, liveLng) {
+  const mapId = `map-${id}`;
+  const oc = CITY_COORDS[origin];
+  const dc = CITY_COORDS[destination];
+  
+  if(!oc || !dc) return;
+
+  const miniMap = L.map(mapId, { zoomControl: false, attributionControl: false }).setView([liveLat, liveLng], 6);
+  
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const tileUrl = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+  L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(miniMap);
+
+  const riskColor = RISK_COLORS[risk] || '#4da6f5';
+
+  // Draw the dotted route line
+  L.polyline([[oc.lat, oc.lng], [dc.lat, dc.lng]], { 
+      color: riskColor, weight: 2, dashArray: '4, 6', opacity: 0.8 
+  }).addTo(miniMap);
+
+  // Mark Origin and Destination
+  L.circleMarker([oc.lat, oc.lng], {radius: 4, color: '#fff', fillColor: '#333', fillOpacity: 1}).addTo(miniMap);
+  L.circleMarker([dc.lat, dc.lng], {radius: 4, color: '#fff', fillColor: '#333', fillOpacity: 1}).addTo(miniMap);
+
+  // Mark the Live Truck Location
+  const truckIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:var(--amber);border:2px solid #fff;box-shadow:0 0 12px var(--amber);"></div>`,
+    iconSize:[14,14], iconAnchor:[7,7]
+  });
+  
+  window[`truckMarker_${id}`] = L.marker([liveLat, liveLng], {icon: truckIcon}).addTo(miniMap);
+  
+  // Force leafet to recalculate size after rendering
+  setTimeout(() => { miniMap.invalidateSize(); }, 200);
+}
+
+// ─── Mitigation Modal ─────────────────────────────────────────
+// ─── Mitigation Modal ─────────────────────────────────────────
+async function showMitigation(id, origin, destination, risk, prob, factors) {
+  const sc = prob >= 65 ? 'var(--red)' : prob >= 35 ? 'var(--amber)' : 'var(--green)';
+  openModal(id, `Mitigation Plan — ${risk} Risk`, `
+    <div class="modal-section">
+      <div class="modal-section-label">Risk Profile</div>
+      <div class="stat-grid">
+        <div class="stat-item">
+          <div class="stat-item-label">Delay Probability</div>
+          <div class="stat-item-val" style="color:${sc}">${prob}%</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-item-label">Risk Level</div>
+          <div class="stat-item-val">${risk}</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-label">Delay Factors</div>
+      <ul style="list-style:none;padding:0">
+        ${(factors || '').split(';').filter(Boolean).map(f =>
+          `<li style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px">
+            <span style="color:var(--amber);font-size:10px">▸</span>${f.trim()}
+          </li>`).join('') || '<li style="font-size:13px;color:var(--muted)">No specific factors</li>'}
+      </ul>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-label">✦ Gemini AI — Immediate Actions</div>
+      <div class="ai-box" id="mAct">Generating action plan…</div>
+    </div>
+    
+    <button id="alertBtn-${id}" class="btn btn-green" style="width: 100%; margin-top: 15px;" onclick="sendSMSAlert('${id}', '${risk}', '${factors}')">
+      📲 Dispatch SMS Alert to Manager
+    </button>
+  `);
+
+  try {
+    const res  = await fetch(`/mitigate?shipment_id=${id}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&risk_level=${risk}&delay_probability=${prob}&factors=${encodeURIComponent(factors)}`);
+    const data = await res.json();
+    document.getElementById('mAct').textContent = data.actions;
+  } catch(e) {
+    document.getElementById('mAct').textContent = 'Error loading mitigation actions. Check server.';
+  }
+}
+
+// ─── Trigger SMS Alert ──────────────────────────────────────
+async function sendSMSAlert(shipment_id, risk_level, factors) {
+  const btn = document.getElementById(`alertBtn-${shipment_id}`);
+  btn.textContent = "Sending...";
+  btn.style.opacity = "0.7";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shipment_id, risk_level, factors })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      btn.textContent = "✓ SMS Delivered";
+      btn.style.background = "transparent";
+      btn.style.border = "1px solid var(--green)";
+      btn.style.color = "var(--green)";
+    } else {
+      btn.textContent = "⚠️ Simulated (Twilio Keys Missing)";
+      btn.style.background = "var(--s2)";
+    }
+  } catch (err) {
+    btn.textContent = "Error Sending Alert";
+  }
+}
+
+function openModal(title, sub, body) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalSub').textContent   = sub;
+  document.getElementById('modalBody').innerHTML    = body;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+document.getElementById('modal').addEventListener('click', e => {
+  if(e.target === document.getElementById('modal')) closeModal();
+});
+
+// ─── Chatbot ─────────────────────────────────────────────────
+function toggleChat() { document.getElementById('chatWindow').classList.toggle('open'); }
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg   = input.value.trim();
+  if(!msg) return;
+  input.value = '';
+  appendMsg(msg, 'user');
+  chatHistory.push({role:'user', content:msg});
+  const typing = appendMsg('Thinking…', 'bot typing');
+  try {
+    const res  = await fetch('/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:msg, history:chatHistory.slice(-6)})
+    });
+    const data = await res.json();
+    typing.textContent = data.reply;
+    typing.classList.remove('typing');
+    chatHistory.push({role:'assistant', content:data.reply});
+  } catch(e) {
+    typing.textContent = 'Error connecting to AI. Make sure the server is running.';
+    typing.classList.remove('typing');
+  }
+  const msgs = document.getElementById('chatMessages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+function appendMsg(text, cls) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.textContent = text;
+  const msgs = document.getElementById('chatMessages');
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+async function handleLogout() {
+  await fetch('/logout', { method: 'POST' });
+  window.location.href = '/login-page';
+}
+// ─── Real-Time WebSockets ──────────────────────────────────
+const socket = io();
+
+socket.on('connect', () => {
+  console.log('🟢 Connected to secure live telemetry feed.');
+});
+
+socket.on('fleet_update', (data) => {
+  console.log('📡 Live Ping Received:', data);
+  
+  // If the dropdown map is currently open for this specific shipment, animate the truck moving!
+  if (window[`truckMarker_${data.shipment_id}`]) {
+    const marker = window[`truckMarker_${data.shipment_id}`];
+    
+    // Animate the marker to the new GPS coordinates
+    marker.setLatLng([data.lat, data.lng]);
+    
+    // Update the live location text in the UI
+    const locDiv = document.getElementById(`loc-${data.shipment_id}`);
+    if(locDiv) locDiv.textContent = `GPS Ping: ${data.lat.toFixed(3)}, ${data.lng.toFixed(3)}`;
+  }
+});
+// Automatically load data from MongoDB when the page opens
+window.addEventListener('DOMContentLoaded', () => {
+    loadFromMongo();
+});
+</script>
+</body>
+</html>
