@@ -1,6 +1,12 @@
 {
-  "version": 2,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.py" }
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "backend/app.py"
+    }
   ]
 }
